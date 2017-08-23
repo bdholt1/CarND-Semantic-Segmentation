@@ -54,36 +54,46 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     """
 
     # FCN Encoder (1x1 convolution)
-    encode_layer3 = tf.layers.conv2d(vgg_layer3_out, filters=num_classes, kernel_size=1, strides=1,
-                                  kernel_initializer=tf.truncated_normal_initializer(stddev = 0.01))
+    with tf.variable_scope('encode_layer3'):
+        encode_layer3 = tf.layers.conv2d(vgg_layer3_out, filters=num_classes, kernel_size=1, strides=1,
+                                            kernel_initializer=tf.truncated_normal_initializer(stddev = 0.01))
+        encode_layer3 = tf.layers.batch_normalization(encode_layer3, training=True)
 
     # FCN Encoder (1x1 convolution)
-    encode_layer4 = tf.layers.conv2d(vgg_layer4_out, filters=num_classes, kernel_size=1, strides=1,
-                                     kernel_initializer=tf.truncated_normal_initializer(stddev=0.01) )
+    with tf.variable_scope('encode_layer4'):
+        encode_layer4 = tf.layers.conv2d(vgg_layer4_out, filters=num_classes, kernel_size=1, strides=1,
+                                         kernel_initializer=tf.truncated_normal_initializer(stddev=0.01) )
+        encode_layer4 = tf.layers.batch_normalization(encode_layer4, training=True)
 
     # FCN Encoder (1x1 convolution)
-    encode_layer7 = tf.layers.conv2d(vgg_layer7_out, filters=num_classes, kernel_size=1, strides=1,
-                                     kernel_initializer=tf.truncated_normal_initializer( stddev=0.01 ))
+    with tf.variable_scope('encode_layer7'):
+        encode_layer7 = tf.layers.conv2d(vgg_layer7_out, filters=num_classes, kernel_size=1, strides=1,
+                                         kernel_initializer=tf.truncated_normal_initializer( stddev=0.01 ))
+        encode_layer7 = tf.layers.batch_normalization(encode_layer7, training=True)
 
-    # FCN Decoder
-    decode_layer1 = tf.layers.conv2d_transpose(encode_layer7, filters=num_classes, kernel_size=4, strides=2, padding='SAME',
-                                               kernel_initializer=tf.truncated_normal_initializer(stddev=0.01) )
+    # FCN Decoder (Upsample)
+    with tf.variable_scope('decode_layer1'):
+        decode_layer1 = tf.layers.conv2d_transpose(encode_layer7, filters=num_classes, kernel_size=4, strides=2, padding='SAME',
+                                                   kernel_initializer=tf.truncated_normal_initializer(stddev=0.01) )
+        decode_layer1 = tf.layers.batch_normalization(decode_layer1, training=True)
+        # Skip connection from encode layer 4 to first decode layer
+        decode_layer1 = tf.add(encode_layer4, decode_layer1)
 
-    # Skip connection from encode layer 4 to first decode layer
-    decode_layer2_skip = tf.add(encode_layer4, decode_layer1)
+    # FCN Decoder (Upsample)
+    with tf.variable_scope('decode_layer2'):
+        decode_layer2 = tf.layers.conv2d_transpose(decode_layer1, filters=num_classes, kernel_size=4, strides=2, padding='SAME',
+                                                   kernel_initializer=tf.truncated_normal_initializer(stddev = 0.01))
+        decode_layer2 = tf.layers.batch_normalization(decode_layer2, training=True)
+        # Skip connection from first encode layer to second decode layer
+        decode_layer2 = tf.add(encode_layer3, decode_layer2)
 
-    # FCN Decoder
-    decode_layer3 = tf.layers.conv2d_transpose(decode_layer2_skip, filters=num_classes, kernel_size=4, strides=2, padding='SAME',
-                                               kernel_initializer=tf.truncated_normal_initializer(stddev = 0.01))
+    # FCN Decoder (Upsample)
+    with tf.variable_scope('decode_layer3'):
+        decode_layer3 = tf.layers.conv2d_transpose(decode_layer2, filters=num_classes, kernel_size=16, strides=8, padding='SAME',
+                                                   kernel_initializer=tf.truncated_normal_initializer(stddev = 0.01))
+        decode_layer3 = tf.layers.batch_normalization(decode_layer3, training=True)
 
-    # Skip connection from first encode layer to second decode layer
-    decode_layer4_skip = tf.add(encode_layer3, decode_layer3)
-
-    # FCN Decoder
-    output = tf.layers.conv2d_transpose(decode_layer4_skip, filters=num_classes, kernel_size=16, strides=8, padding='SAME',
-                                        kernel_initializer=tf.truncated_normal_initializer(stddev = 0.01))
-
-    return output
+    return decode_layer3
 tests.test_layers(layers)
 
 
@@ -141,7 +151,7 @@ def run():
     runs_dir = './runs'
     tests.test_for_kitti_dataset(data_dir)
     epochs = 10
-    batch_size = 16
+    batch_size = 16 # largest power of 2 that can fit on a GTX1080
 
     # Download pretrained vgg model
     helper.maybe_download_pretrained_vgg(data_dir)
